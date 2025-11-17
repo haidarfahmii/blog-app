@@ -3,17 +3,6 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { User } from "../generated/prisma/client";
 
-// interface RegisterData {
-//     name: string;
-//     email: string;
-//     password: string;
-// }
-
-// interface LoginData {
-//     email: string;
-//     password: string;
-// }
-
 export const AuthService = {
   async register({
     name,
@@ -38,6 +27,14 @@ export const AuthService = {
         email,
         password: hashedPassword,
       },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        createdAt: true,
+        updatedAt: true,
+        deletedAt: true,
+      },
     });
 
     // setelah user berhasil dibuat, langsung buat token
@@ -55,10 +52,8 @@ export const AuthService = {
       }
     );
 
-    // menghapus password dari objek sebelum dikembalikan
-    const { password: _, ...userWithoutPassword } = newUser;
     return {
-      user: userWithoutPassword,
+      user: newUser,
       token: token,
     };
   },
