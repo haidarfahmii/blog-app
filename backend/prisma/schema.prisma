@@ -24,7 +24,7 @@ model User {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  deletedAt DateTime 
+  deletedAt DateTime? 
 
   @@map("users") 
 }
@@ -44,7 +44,7 @@ model Article {
 
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
-  deletedAt   DateTime
+  deletedAt   DateTime?
 
   @@map("articles")
 }

@@ -1,10 +1,13 @@
 import express, { Express, Request, Response, NextFunction } from "express";
 import dotenv from "dotenv";
+import authRouter from "../src/routers/auth.router";
 
 dotenv.config();
 const app: Express = express();
 app.use(express.json());
-const port = process.env.POR || 5000;
+const port = process.env.PORT || 5000;
+
+app.use("/api/auth", authRouter);
 
 app.use((err: any, req: Request, res: Response, next: NextFunction) => {
   res.status(err.statusCode || 500).json({
