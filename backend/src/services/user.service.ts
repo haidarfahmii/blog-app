@@ -1,5 +1,6 @@
 import prisma from "../config/prisma.config";
 import { User } from "../generated/prisma/client";
+import { ApiError } from "../utils/ApiError";
 
 export const UserService = {
   async getAllUsers() {
@@ -32,7 +33,7 @@ export const UserService = {
       },
     });
 
-    if (!user) throw new Error("User not found");
+    if (!user) throw new ApiError(404, "User not found");
 
     return user;
   },
@@ -44,7 +45,7 @@ export const UserService = {
   ) {
     // memastikan pengguna hanya dapat memperbaharui profile mereka sendiri
     if (id !== currentUserId) {
-      throw new Error("Unauthorized to update this user");
+      throw new ApiError(403, "Unauthorized to update this user");
     }
 
     // periksa email baru sudah digunakan (kondisi email diubah)
@@ -57,7 +58,7 @@ export const UserService = {
           }, // cari email ini di pengguna lain
         },
       });
-      if (existingUser) throw new Error("Email already in use");
+      if (existingUser) throw new ApiError(409, "Email already in use");
     }
 
     return prisma.user.update({
@@ -80,7 +81,7 @@ export const UserService = {
         deletedAt: null,
       },
     });
-    if (!user) throw new Error("User not found");
+    if (!user) throw new ApiError(404, "User not found");
 
     return prisma.article.findMany({
       where: {

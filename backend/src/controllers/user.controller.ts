@@ -1,65 +1,58 @@
 import { Request, Response, NextFunction } from "express";
 import { UserService } from "../services/user.service";
-import { updateUserValidationSchema } from "../auth/auth.validation";
+import { asyncHandler } from "../utils/asyncHandler";
+import { ApiError } from "../utils/ApiError";
 
 export const UserController = {
-  async getAllUsers(req: Request, res: Response, next: NextFunction) {
-    try {
+  getAllUsers: asyncHandler(
+    async (_req: Request, res: Response, _next: NextFunction) => {
       const users = await UserService.getAllUsers();
 
       res.status(200).json({
         data: users,
       });
-    } catch (err) {
-      next(err);
     }
-  },
+  ),
 
-  async getUserById(req: Request, res: Response, next: NextFunction) {
-    try {
+  getUserById: asyncHandler(
+    async (req: Request, res: Response, _next: NextFunction) => {
       const { id } = req.params;
       const user = await UserService.getUserById(id);
 
       res.status(200).json({
         data: user,
       });
-    } catch (err) {
-      next(err);
     }
-  },
+  ),
 
-  async updateUser(req: Request, res: Response, next: NextFunction) {
-    try {
+  updateUser: asyncHandler(
+    async (req: Request, res: Response, _next: NextFunction) => {
       const { id } = req.params;
       const currentUserId = req.user?.id;
-      if (!currentUserId) throw new Error("Authentication failed");
 
-      const validatedBody = updateUserValidationSchema.parse(req.body);
-      const user = await UserService.updateUser(
-        id,
-        validatedBody,
-        currentUserId
-      );
+      if (!currentUserId)
+        throw new ApiError(
+          401,
+          "Authentication failed. User ID not found on request."
+        );
+
+      const user = await UserService.updateUser(id, req.body, currentUserId);
 
       res.status(200).json({
         message: "User updated successfully",
         data: user,
       });
-    } catch (err) {
-      next(err);
     }
-  },
+  ),
 
-  async getArticlesByUserId(req: Request, res: Response, next: NextFunction) {
-    try {
+  getArticlesByUserId: asyncHandler(
+    async (req: Request, res: Response, _next: NextFunction) => {
       const { id } = req.params;
       const articles = await UserService.getArticlesByUserId(id);
 
       res.status(200).json({
         data: articles,
       });
-    } catch (err) {
-      next(err);
     }
-  },
+  ),
 };

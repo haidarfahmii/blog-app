@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import prisma from "../config/prisma.config";
 import { User } from "../generated/prisma/client";
+import { ApiError } from "../utils/ApiError";
 
 // definisi tipe express
 declare global {
@@ -18,22 +19,21 @@ interface JwtPayload {
 
 export const authenticateToken = async (
   req: Request,
-  res: Response,
+  _res: Response,
   next: NextFunction
 ) => {
-  const authHeader = req.headers["authorization"];
-  const token = authHeader && authHeader.split(" ")[1]; // Bearer TOKEN
-
-  if (token == null) {
-    return res.status(401).json({
-      message: "Authentication token required",
-    });
-  }
-
-  const secret = process.env.JWT_SECRET;
-  if (!secret) return next(new Error("JWT secret not configured"));
-
   try {
+    const authHeader = req.headers["authorization"];
+    const token = authHeader && authHeader.split(" ")[1]; // Bearer TOKEN
+
+    if (token == null) {
+      // Gunakan next() dengan ApiError
+      return next(new ApiError(401, "Authentication token required"));
+    }
+
+    // Kita bisa pakai '!' karena sudah dicek di server.ts
+    const secret = process.env.JWT_SECRET!;
+
     const payload = jwt.verify(token, secret) as JwtPayload;
     const user = await prisma.user.findUnique({
       where: {
@@ -51,16 +51,17 @@ export const authenticateToken = async (
     });
 
     if (!user) {
-      return res.status(403).json({
-        message: "Invalid token or user does not exist",
-      });
+      return next(new ApiError(403, "Invalid token or user does not exist"));
     }
 
     req.user = user;
     next();
   } catch (err) {
-    return res.status(403).json({
-      message: "Invalid token",
-    });
+    // Tangani error JWT (misal: token expired)
+    if (err instanceof jwt.JsonWebTokenError) {
+      return next(new ApiError(403, `Invalid token: ${err.message}`));
+    }
+    // Teruskan error lainnya
+    return next(err);
   }
 };

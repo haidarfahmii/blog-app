@@ -2,6 +2,7 @@ import prisma from "../config/prisma.config";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { User } from "../generated/prisma/client";
+import { ApiError } from "../utils/ApiError";
 
 export const AuthService = {
   async register({
@@ -16,7 +17,7 @@ export const AuthService = {
       },
     });
 
-    if (existingUser) throw new Error("User already exists");
+    if (existingUser) throw new ApiError(409, "User already exists");
 
     // hash password
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -39,7 +40,7 @@ export const AuthService = {
 
     // setelah user berhasil dibuat, langsung buat token
     const secret = process.env.JWT_SECRET;
-    if (!secret) throw new Error("JWT secret not found");
+    if (!secret) throw new ApiError(500, "JWT secret not configured");
 
     const token = jwt.sign(
       {
@@ -67,13 +68,13 @@ export const AuthService = {
     });
 
     // kondisi jika user tidak ditemukan
-    if (!user) throw new Error("User not found");
+    if (!user) throw new ApiError(404, "User not found");
 
     // bandingkan password yang diinput dengan hash di database
     const isValidPassword = await bcrypt.compare(password, user.password);
 
     // kondisi jika password salah
-    if (!isValidPassword) throw new Error("Invalid password");
+    if (!isValidPassword) throw new ApiError(401, "Invalid password");
 
     // kondisi jika password benar, buat web token (JWT)
     const secret = process.env.JWT_SECRET;

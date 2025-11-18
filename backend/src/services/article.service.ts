@@ -1,6 +1,7 @@
 import prisma from "../config/prisma.config";
 import { Article } from "../generated/prisma/client";
 import { slugify } from "../utils/slug.util";
+import { ApiError } from "../utils/ApiError";
 
 /**
  * Mendefinisikan tipe data yang diharapkan dari client saat 'create'
@@ -109,7 +110,7 @@ export const ArticleService = {
     });
 
     // kondisi jika artikel tidak ditemukan atau tidak ada
-    if (!article) throw new Error("Article not found");
+    if (!article) throw new ApiError(404, "Article not found");
 
     return article;
   },
@@ -138,7 +139,7 @@ export const ArticleService = {
     });
 
     // kondisi jika artikel tidak ditemukan atau tidak ada
-    if (!article) throw new Error("Article not found");
+    if (!article) throw new ApiError(404, "Article not found");
 
     return article;
   },
@@ -202,9 +203,12 @@ export const ArticleService = {
       },
     });
 
-    if (!article) throw new Error("Article not found");
+    if (!article) throw new ApiError(404, "Article not found");
     if (article.authorId !== authorId)
-      throw new Error("Unauthorized: You are not the author of this article.");
+      throw new ApiError(
+        403,
+        "Unauthorized: You are not the author of this article."
+      );
 
     // handle update slug
     let slugData = {};
@@ -253,29 +257,25 @@ export const ArticleService = {
    * [admin/user] soft delete artikel
    */
   async deleteArticle(articleId: string, authorId: string) {
-    // cek kepemilikan
-    const article = await prisma.article.findFirst({
+    // cek kepemilikan dan update dalam satu kueri atomik
+    const result = await prisma.article.updateMany({
       where: {
         id: articleId,
-        deletedAt: null,
-      },
-      select: {
-        authorId: true, // hanya ambil data minimal untuk verifikasi
-      },
-    });
-
-    if (!article) throw new Error("Article not found");
-    if (article.authorId !== authorId)
-      throw new Error("Unauthorized: You are not the author of this article");
-
-    await prisma.article.update({
-      where: {
-        id: articleId,
+        authorId: authorId, // Pastikan hanya author yang bisa menghapus
+        deletedAt: null, // Pastikan belum dihapus
       },
       data: {
         deletedAt: new Date(),
       },
     });
+    // Jika result.count adalah 0, berarti artikel tidak ditemukan
+    // ATAU pengguna bukan pemiliknya.
+    if (result.count === 0) {
+      throw new ApiError(
+        404,
+        "Article not found or you are not authorized to delete it."
+      );
+    }
 
     return {
       message: "Article deleted successfully",
