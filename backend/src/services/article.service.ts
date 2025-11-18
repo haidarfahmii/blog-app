@@ -1,7 +1,15 @@
 import prisma from "../config/prisma.config";
 import { Article } from "../generated/prisma/client";
 import { slugify } from "../utils/slug.util";
-import { ApiError } from "../utils/ApiError";
+import { NotFoundError, ForbiddenError } from "../errors/custom.error";
+import {
+  notDeletedWhere,
+  publishedArticleWhere,
+  articleSelectList,
+  articleSelectDetail,
+  articleSelectEdit,
+  authorSelect,
+} from "../constants/prisma.selects";
 
 /**
  * Mendefinisikan tipe data yang diharapkan dari client saat 'create'
@@ -23,35 +31,66 @@ type CreateArticleData = Omit<
 type UpdateArticleData = Partial<CreateArticleData>;
 
 /**
- * konstanta untuk 'select' data author yang AMAN.
- * digunakan berulang kali untuk menghindari kebocoran data sensitif (seperti 'email').
+ * Helper function untuk generate unique slug
  */
+const generateUniqueSlug = async (
+  title: string,
+  excludeId?: string
+): Promise<string> => {
+  let slug = slugify(title);
 
-const secureAuthorSelect = {
-  id: true,
-  name: true,
+  const whereCondition: any = {
+    slug,
+    ...notDeletedWhere,
+  };
+
+  if (excludeId) {
+    whereCondition.id = {
+      not: excludeId,
+    };
+  }
+
+  const existingSlug = await prisma.article.findFirst({
+    where: whereCondition,
+    select: { id: true },
+  });
+
+  // jika slug sudah ada, tambahkan timestamp
+  if (existingSlug) {
+    slug = `${slug}-${Date.now()}`;
+  }
+
+  return slug;
+};
+
+/**
+ * helper function untuk verify article ownership
+ */
+const verifyOwnership = async (
+  articleId: string,
+  authorId: string
+): Promise<void> => {
+  const article = await prisma.article.findFirst({
+    where: {
+      id: articleId,
+      ...notDeletedWhere,
+    },
+    select: {
+      authorId: true,
+    },
+  });
+
+  if (!article) throw new NotFoundError("Article not found");
+  if (article.authorId !== authorId)
+    throw new ForbiddenError("You are not the author of this article");
 };
 
 export const ArticleService = {
   // [public] mengambil semua artikel yang sudah di publish
   async getAllPublishedArticles() {
     return prisma.article.findMany({
-      where: {
-        deletedAt: null,
-        published: true,
-      },
-      select: {
-        id: true,
-        title: true,
-        slug: true,
-        imageUrl: true,
-        category: true,
-        description: true,
-        createdAt: true,
-        author: {
-          select: secureAuthorSelect,
-        },
-      },
+      where: publishedArticleWhere,
+      select: articleSelectList,
       orderBy: {
         createdAt: "desc",
       },
@@ -65,9 +104,7 @@ export const ArticleService = {
 
   async getAllArticlesForAdmin() {
     return prisma.article.findMany({
-      where: {
-        deletedAt: null,
-      },
+      where: notDeletedWhere,
       select: {
         id: true,
         slug: true,
@@ -76,7 +113,7 @@ export const ArticleService = {
         createdAt: true,
         updatedAt: true,
         author: {
-          select: secureAuthorSelect,
+          select: authorSelect,
         },
       },
       orderBy: {
@@ -90,27 +127,13 @@ export const ArticleService = {
     const article = await prisma.article.findFirst({
       where: {
         slug,
-        published: true,
-        deletedAt: null,
+        ...publishedArticleWhere,
       },
-      select: {
-        id: true,
-        title: true,
-        slug: true,
-        imageUrl: true,
-        category: true,
-        description: true,
-        content: true,
-        createdAt: true,
-        updatedAt: true,
-        author: {
-          select: secureAuthorSelect,
-        },
-      },
+      select: articleSelectDetail,
     });
 
     // kondisi jika artikel tidak ditemukan atau tidak ada
-    if (!article) throw new ApiError(404, "Article not found");
+    if (!article) throw new NotFoundError("Article not found");
 
     return article;
   },
@@ -120,46 +143,28 @@ export const ArticleService = {
     const article = await prisma.article.findFirst({
       where: {
         id: articleId,
-        deletedAt: null,
+        ...notDeletedWhere,
       },
-      select: {
-        id: true,
-        title: true,
-        slug: true,
-        imageUrl: true,
-        category: true,
-        description: true,
-        content: true,
-        published: true,
-        authorId: true,
-        author: {
-          select: secureAuthorSelect,
-        },
-      },
+      select: articleSelectEdit,
     });
 
     // kondisi jika artikel tidak ditemukan atau tidak ada
-    if (!article) throw new ApiError(404, "Article not found");
+    if (!article) throw new NotFoundError("Article not found");
 
     return article;
   },
 
+  /**
+   * [AUTHENTICATED] Create new article
+   *
+   * Features:
+   * - Auto-generate unique slug dari title
+   * - Support draft mode (published: false)
+   */
   // [admin/user] membuat artikel baru
   async createArticle(authorId: string, data: CreateArticleData) {
-    // buat slug dari title
-    let slug = slugify(data.title);
-
-    // cek unique slug
-    const existingSlug = await prisma.article.findFirst({
-      where: {
-        slug,
-        deletedAt: null,
-      },
-    });
-
-    if (existingSlug) {
-      slug = `${slug}-${Date.now()}`; // tambahkan date agar unik
-    }
+    // buat unique slug dari title
+    const slug = await generateUniqueSlug(data.title);
 
     // buat artikel
     return prisma.article.create({
@@ -175,13 +180,21 @@ export const ArticleService = {
         slug: true,
         published: true,
         author: {
-          select: secureAuthorSelect,
+          select: authorSelect,
         },
       },
     });
   },
 
   /**
+   * [AUTHENTICATED] Update article
+   *
+   * Security:
+   * - Only author can update their article
+   * - Auto-regenerate slug if title changes
+   *
+   * @throws {NotFoundError} jika artikel tidak ditemukan
+   * @throws {ForbiddenError} jika bukan pemilik artikel
    * [admin/user] update artikel
    * terdapat verifikasi kepemilikan & handle update slug
    */
@@ -191,55 +204,28 @@ export const ArticleService = {
     data: UpdateArticleData
   ) {
     // cek kepemilikan
-    const article = await prisma.article.findFirst({
-      where: {
-        id: articleId,
-        deletedAt: null,
-      },
-      select: {
-        // hanya ambil data yang perlu di cek
-        authorId: true,
-        title: true,
-      },
-    });
+    await verifyOwnership(articleId, authorId);
 
-    if (!article) throw new ApiError(404, "Article not found");
-    if (article.authorId !== authorId)
-      throw new ApiError(
-        403,
-        "Unauthorized: You are not the author of this article."
-      );
+    // prepare update data
+    const updateData: any = { ...data };
 
-    // handle update slug
-    let slugData = {};
-    if (data.title && data.title !== article.title) {
-      let newSlug = slugify(data.title);
-      const existingSlug = await prisma.article.findFirst({
-        where: {
-          slug: newSlug,
-          deletedAt: null,
-          id: {
-            not: articleId, // cek slug dari artikel lain nya
-          },
-        },
+    // handle slug update jika title berubah
+    if (data.title) {
+      const currentArticle = await prisma.article.findUnique({
+        where: { id: articleId },
+        select: { title: true },
       });
 
-      if (existingSlug) {
-        newSlug = `${newSlug}-${Date.now()}`;
+      // hanya regenerate slug jika title benar berubah
+      if (currentArticle && data.title !== currentArticle.title) {
+        updateData.slug = await generateUniqueSlug(data.title, articleId);
       }
-      slugData = { slug: newSlug };
     }
 
     // update data
-    return prisma.article.update({
-      where: {
-        id: articleId,
-      },
-      data: {
-        ...data,
-        ...slugData, // gabungan data baru dan slug baru
-      },
-      // kembalikan data yang sudah di update
+    const updateArticle = await prisma.article.update({
+      where: { id: articleId },
+      data: updateData,
       select: {
         id: true,
         title: true,
@@ -247,38 +233,138 @@ export const ArticleService = {
         published: true,
         updatedAt: true,
         author: {
-          select: secureAuthorSelect,
+          select: authorSelect,
         },
       },
     });
+
+    return updateArticle;
   },
 
   /**
+   * [AUTHENTICATED] Soft delete article
+   *
+   * Security:
+   * - Only author can delete their article
+   *
+   * @throws {NotFoundError} jika artikel tidak ditemukan
+   * @throws {ForbiddenError} jika bukan pemilik artikel
+   *
    * [admin/user] soft delete artikel
    */
   async deleteArticle(articleId: string, authorId: string) {
     // cek kepemilikan dan update dalam satu kueri atomik
-    const result = await prisma.article.updateMany({
-      where: {
-        id: articleId,
-        authorId: authorId, // Pastikan hanya author yang bisa menghapus
-        deletedAt: null, // Pastikan belum dihapus
-      },
+    await verifyOwnership(articleId, authorId);
+
+    await prisma.article.update({
+      where: { id: articleId },
       data: {
         deletedAt: new Date(),
       },
     });
-    // Jika result.count adalah 0, berarti artikel tidak ditemukan
-    // ATAU pengguna bukan pemiliknya.
-    if (result.count === 0) {
-      throw new ApiError(
-        404,
-        "Article not found or you are not authorized to delete it."
-      );
-    }
 
     return {
       message: "Article deleted successfully",
     };
+  },
+
+  /**
+   * [AUTHENTICATED] Toggle article publish status
+   * Utility function untuk publish/unpublish artikel
+   *
+   * @throws {NotFoundError} jika artikel tidak ditemukan
+   * @throws {ForbiddenError} jika bukan pemilik artikel
+   */
+  async togglePublishStatus(articleId: string, authorId: string) {
+    // Verify ownership
+    await verifyOwnership(articleId, authorId);
+
+    // Get current status
+    const article = await prisma.article.findUnique({
+      where: { id: articleId },
+      select: { published: true },
+    });
+
+    if (!article) {
+      throw new NotFoundError("Article not found");
+    }
+
+    // Toggle status
+    const updatedArticle = await prisma.article.update({
+      where: { id: articleId },
+      data: {
+        published: !article.published,
+      },
+      select: {
+        id: true,
+        title: true,
+        published: true,
+      },
+    });
+
+    return updatedArticle;
+  },
+
+  /**
+   * [PUBLIC] Search articles by title or content
+   */
+  async searchArticles(query: string) {
+    return prisma.article.findMany({
+      where: {
+        ...publishedArticleWhere,
+        OR: [
+          {
+            title: {
+              contains: query,
+              mode: "insensitive",
+            },
+          },
+          {
+            author: {
+              name: {
+                contains: query,
+                mode: "insensitive",
+              },
+            },
+          },
+          {
+            description: {
+              contains: query,
+              mode: "insensitive",
+            },
+          },
+          {
+            content: {
+              contains: query,
+              mode: "insensitive",
+            },
+          },
+        ],
+      },
+      select: articleSelectList,
+      orderBy: {
+        createdAt: "desc",
+      },
+      take: 20, // Limit results
+    });
+  },
+
+  /**
+   * [PUBLIC] Get articles by category
+   */
+  async getArticlesByCategory(category: string) {
+    return prisma.article.findMany({
+      where: {
+        ...publishedArticleWhere,
+        category: {
+          equals: category,
+          mode: "insensitive",
+        },
+      },
+      select: articleSelectList,
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
   },
 };

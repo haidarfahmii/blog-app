@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import { AuthService } from "../services/auth.service";
-import { asyncHandler } from "../utils/asyncHandler";
+import { asyncHandler } from "../middlewares/error.middleware";
 
 export const AuthController = {
   // controller untuk register

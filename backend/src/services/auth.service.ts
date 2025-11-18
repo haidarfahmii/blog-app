@@ -2,9 +2,65 @@ import prisma from "../config/prisma.config";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { User } from "../generated/prisma/client";
-import { ApiError } from "../utils/ApiError";
+import {
+  ConflictError,
+  UnauthorizedError,
+  InternalServerError,
+} from "../errors/custom.error";
+import { notDeletedWhere, userSelectSafe } from "../constants/prisma.selects";
+
+/**
+ * Konstanta untuk configuration
+ */
+const SALT_ROUNDS = 10;
+const TOKEN_EXPIRY = "24h";
+
+/**
+ * Helper function untuk generate JWT token
+ */
+const generateToken = (userId: string, email: string): string => {
+  const secret = process.env.JWT_SECRET;
+
+  if (!secret) {
+    throw new InternalServerError("JWT_SECRET is not configured");
+  }
+
+  return jwt.sign(
+    {
+      userId,
+      email,
+    },
+    secret,
+    {
+      expiresIn: TOKEN_EXPIRY,
+    }
+  );
+};
+
+/**
+ * Helper function untuk hash password
+ */
+const hashPassword = async (password: string): Promise<string> => {
+  return bcrypt.hash(password, SALT_ROUNDS);
+};
+
+/**
+ * Helper function untuk verify password
+ */
+const verifyPassword = async (
+  plainPassword: string,
+  hashedPassword: string
+): Promise<boolean> => {
+  return bcrypt.compare(plainPassword, hashedPassword);
+};
 
 export const AuthService = {
+  /**
+   * Register user baru
+   *
+   * @throws {ConflictError} jika email sudah terdaftar
+   * @throws {InternalServerError} jika JWT_SECRET tidak dikonfigurasi
+   */
   async register({
     name,
     email,
@@ -15,81 +71,60 @@ export const AuthService = {
       where: {
         email,
       },
+      select: { id: true },
     });
 
-    if (existingUser) throw new ApiError(409, "User already exists");
+    if (existingUser) throw new ConflictError("Email already registered");
 
     // hash password
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword = await hashPassword(password);
 
+    // create user baru
     const newUser = await prisma.user.create({
       data: {
         name,
         email,
         password: hashedPassword,
       },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        createdAt: true,
-        updatedAt: true,
-        deletedAt: true,
-      },
+      select: userSelectSafe,
     });
 
     // setelah user berhasil dibuat, langsung buat token
-    const secret = process.env.JWT_SECRET;
-    if (!secret) throw new ApiError(500, "JWT secret not configured");
-
-    const token = jwt.sign(
-      {
-        userId: newUser.id,
-        email: newUser.email,
-      },
-      secret,
-      {
-        expiresIn: "1h",
-      }
-    );
+    const token = generateToken(newUser.id, newUser.email);
 
     return {
       user: newUser,
-      token: token,
+      token,
     };
   },
 
+  /**
+   * Login user
+   *
+   * @throws {UnauthorizedError} jika credentials invalid
+   * @throws {InternalServerError} jika JWT_SECRET tidak dikonfigurasi
+   */
   async login({ email, password }: Pick<User, "email" | "password">) {
     // cari user berdasarkan email
     const user = await prisma.user.findUnique({
       where: {
         email,
+        ...notDeletedWhere,
       },
     });
 
     // kondisi jika user tidak ditemukan
-    if (!user) throw new ApiError(404, "User not found");
+    if (!user) throw new UnauthorizedError("Invalid email or password");
 
     // bandingkan password yang diinput dengan hash di database
-    const isValidPassword = await bcrypt.compare(password, user.password);
+    const isValidPassword = await verifyPassword(password, user.password);
 
     // kondisi jika password salah
-    if (!isValidPassword) throw new ApiError(401, "Invalid password");
+    if (!isValidPassword)
+      throw new UnauthorizedError("Invalid email or password");
 
     // kondisi jika password benar, buat web token (JWT)
-    const secret = process.env.JWT_SECRET;
-    if (!secret) throw new Error("JWT secret not found");
-
-    const token = jwt.sign(
-      {
-        userId: user.id,
-        email: user.email,
-      },
-      secret,
-      {
-        expiresIn: "1h",
-      }
-    );
+    const token = generateToken(user.id, user.email);
 
     return { token };
   },

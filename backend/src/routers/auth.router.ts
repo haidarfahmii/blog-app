@@ -4,7 +4,7 @@ import { validate } from "../middlewares/validate.middleware";
 import {
   registerValidationSchema,
   loginValidationSchema,
-} from "../auth/auth.validation";
+} from "../validations/auth.validation";
 
 const router = Router();
 

@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import { ArticleService } from "../services/article.service";
-import { asyncHandler } from "../utils/asyncHandler";
-import { ApiError } from "../utils/ApiError";
+import { asyncHandler } from "../middlewares/error.middleware";
+import { UnauthorizedError, BadRequestError } from "../errors/custom.error";
 
 export const ArticleController = {
   /**
@@ -12,6 +12,7 @@ export const ArticleController = {
       // memanggil fungsi service yang spesifik untuk publik
       const articles = await ArticleService.getAllPublishedArticles();
       res.status(200).json({
+        success: true,
         data: articles,
       });
     }
@@ -27,6 +28,7 @@ export const ArticleController = {
       const article = await ArticleService.getPublishedArticleBySlug(slug);
 
       res.status(200).json({
+        success: true,
         data: article,
       });
     }
@@ -38,16 +40,17 @@ export const ArticleController = {
    * membutuhkan user yang sudah melakukan login
    */
   createArticle: asyncHandler(
-    async (req: Request, res: Response, next: NextFunction) => {
+    async (req: Request, res: Response, _next: NextFunction) => {
       const authorId = req.user?.id;
       if (!authorId) {
-        throw new ApiError(401, "Authentication failed");
+        throw new UnauthorizedError("Authentication required");
       }
 
       // req.body sudah divalidasi oleh middleware
       const article = await ArticleService.createArticle(authorId, req.body);
 
       res.status(201).json({
+        success: true,
         message: "Article created successfully",
         data: article,
       });
@@ -64,7 +67,7 @@ export const ArticleController = {
       const authorId = req.user?.id;
 
       if (!authorId) {
-        throw new ApiError(401, "Authentication failed");
+        throw new UnauthorizedError("Authentication failed");
       }
 
       // req.body sudah divalidasi oleh middleware
@@ -75,6 +78,7 @@ export const ArticleController = {
       );
 
       res.status(200).json({
+        success: true,
         message: "Article updated successfully",
         data: article,
       });
@@ -91,13 +95,38 @@ export const ArticleController = {
       const authorId = req.user?.id;
 
       if (!authorId) {
-        throw new ApiError(401, "Authentication failed");
+        throw new UnauthorizedError("Authentication failed");
       }
 
-      await ArticleService.deleteArticle(id, authorId);
+      const result = await ArticleService.deleteArticle(id, authorId);
 
       res.status(200).json({
-        message: "Article deleted successfully",
+        success: true,
+        ...result,
+      });
+    }
+  ),
+
+  /**
+   * [PATCH /api/articles/:id/publish] Toggle publish status
+   */
+  togglePublishStatus: asyncHandler(
+    async (req: Request, res: Response, _next: NextFunction) => {
+      const { id } = req.params;
+      const authorId = req.user?.id;
+
+      if (!authorId) {
+        throw new UnauthorizedError("Authentication required");
+      }
+
+      const article = await ArticleService.togglePublishStatus(id, authorId);
+
+      res.status(200).json({
+        success: true,
+        message: `Article ${
+          article.published ? "published" : "unpublished"
+        } successfully`,
+        data: article,
       });
     }
   ),
@@ -111,6 +140,7 @@ export const ArticleController = {
       const articles = await ArticleService.getAllArticlesForAdmin();
 
       res.status(200).json({
+        success: true,
         data: articles,
       });
     }
@@ -126,7 +156,45 @@ export const ArticleController = {
       const article = await ArticleService.getArticleByIdForAdmin(id);
 
       res.status(200).json({
+        success: true,
         data: article,
+      });
+    }
+  ),
+
+  /**
+   * [GET /api/articles/search?q=keyword] Search articles
+   */
+  searchArticles: asyncHandler(
+    async (req: Request, res: Response, _next: NextFunction) => {
+      const { q } = req.query;
+
+      if (!q || typeof q !== "string") {
+        throw new BadRequestError("Search query is required");
+      }
+
+      const articles = await ArticleService.searchArticles(q);
+
+      res.status(200).json({
+        success: true,
+        data: articles,
+        count: articles.length,
+      });
+    }
+  ),
+
+  /**
+   * [GET /api/articles/category/:category] Get articles by category
+   */
+  getArticlesByCategory: asyncHandler(
+    async (req: Request, res: Response, _next: NextFunction) => {
+      const { category } = req.params;
+      const articles = await ArticleService.getArticlesByCategory(category);
+
+      res.status(200).json({
+        success: true,
+        data: articles,
+        count: articles.length,
       });
     }
   ),
