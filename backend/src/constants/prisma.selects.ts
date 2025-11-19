@@ -10,6 +10,7 @@ export const userSelectSafe = {
   id: true,
   name: true,
   email: true,
+  role: true,
   createdAt: true,
   updatedAt: true,
 } as const;
@@ -20,6 +21,7 @@ export const userSelectSafe = {
 export const userSelectMinimal = {
   id: true,
   name: true,
+  role: true,
 } as const;
 
 /**
@@ -28,6 +30,7 @@ export const userSelectMinimal = {
 export const authorSelect = {
   id: true,
   name: true,
+  role: true,
 } as const;
 
 /**

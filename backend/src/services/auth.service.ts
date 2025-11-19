@@ -1,7 +1,7 @@
 import prisma from "../config/prisma.config";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
-import { User } from "../generated/prisma/client";
+import { Role, User } from "../generated/prisma/client";
 import {
   ConflictError,
   UnauthorizedError,
@@ -18,7 +18,7 @@ const TOKEN_EXPIRY = "24h";
 /**
  * Helper function untuk generate JWT token
  */
-const generateToken = (userId: string, email: string): string => {
+const generateToken = (userId: string, email: string, role: string): string => {
   const secret = process.env.JWT_SECRET;
 
   if (!secret) {
@@ -29,6 +29,7 @@ const generateToken = (userId: string, email: string): string => {
     {
       userId,
       email,
+      role,
     },
     secret,
     {
@@ -85,12 +86,13 @@ export const AuthService = {
         name,
         email,
         password: hashedPassword,
+        role: Role.USER,
       },
       select: userSelectSafe,
     });
 
     // setelah user berhasil dibuat, langsung buat token
-    const token = generateToken(newUser.id, newUser.email);
+    const token = generateToken(newUser.id, newUser.email, newUser.role);
 
     return {
       user: newUser,
@@ -124,7 +126,7 @@ export const AuthService = {
       throw new UnauthorizedError("Invalid email or password");
 
     // kondisi jika password benar, buat web token (JWT)
-    const token = generateToken(user.id, user.email);
+    const token = generateToken(user.id, user.email, user.role);
 
     return { token };
   },

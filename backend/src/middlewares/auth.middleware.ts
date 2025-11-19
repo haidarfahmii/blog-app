@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import prisma from "../config/prisma.config";
-import { User } from "../generated/prisma/client";
+import { User, Role } from "../generated/prisma/client";
 import { UnauthorizedError, InternalServerError } from "../errors/custom.error";
 import { userSelectSafe, notDeletedWhere } from "../constants/prisma.selects";
 
@@ -17,6 +17,7 @@ declare global {
 interface JwtPayload {
   userId: string;
   email: string;
+  role: Role;
 }
 
 /**
@@ -66,7 +67,7 @@ const verifyToken = (token: string, secret: string): JwtPayload => {
 
 export const authenticateToken = async (
   req: Request,
-  res: Response,
+  _res: Response,
   next: NextFunction
 ): Promise<void> => {
   try {
@@ -114,7 +115,7 @@ export const authenticateToken = async (
  */
 export const optionalAuth = async (
   req: Request,
-  res: Response,
+  _res: Response,
   next: NextFunction
 ): Promise<void> => {
   try {

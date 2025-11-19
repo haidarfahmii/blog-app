@@ -1,6 +1,11 @@
 import { Router } from "express";
 import { ArticleController } from "../controllers/article.controller";
 import { authenticateToken } from "../middlewares/auth.middleware";
+import {
+  requireAdmin,
+  requireOwnershipOrAdmin,
+} from "../middlewares/role.middleware";
+import prisma from "../config/prisma.config";
 import { validate } from "../middlewares/validate.middleware";
 import {
   createArticleValidationSchema,
@@ -22,6 +27,19 @@ router.get("/category/:category", ArticleController.getArticlesByCategory);
 router.get("/:slug", ArticleController.getPublishedArticleBySlug);
 
 /**
+ * Helper function untuk middleware requireOwnershipOrAdmin
+ * Mengambil authorId dari database berdasarkan articleId di params
+ */
+const getArticleAuthorId = async (req: any) => {
+  const { id } = req.params;
+  const article = await prisma.article.findUnique({
+    where: { id },
+    select: { authorId: true },
+  });
+  return article?.authorId;
+};
+
+/**
  * Protected routes (require authentication)
  */
 
@@ -40,7 +58,12 @@ router.put(
   ArticleController.updateArticle
 );
 // DELETE /api/articles/:id - Delete article
-router.delete("/:id", authenticateToken, ArticleController.deleteArticle);
+router.delete(
+  "/:id",
+  authenticateToken,
+  requireOwnershipOrAdmin(getArticleAuthorId),
+  ArticleController.deleteArticle
+);
 // PATCH /api/articles/:id/publish - Toggle publish status
 router.patch(
   "/:id/publish",
@@ -48,15 +71,21 @@ router.patch(
   ArticleController.togglePublishStatus
 );
 /**
- * Admin routes
+ * Admin routes (require ADMIN role)
  */
 // GET /api/articles/admin/all - Get all articles (including drafts)
-router.get("/admin/all", authenticateToken, ArticleController.getAdminArticles);
+router.get(
+  "/admin/all",
+  authenticateToken,
+  requireAdmin,
+  ArticleController.getAdminArticles
+);
 
 // GET /api/articles/admin/:id - Get article by ID for admin
 router.get(
   "/admin/:id",
   authenticateToken,
+  requireAdmin,
   ArticleController.getAdminArticleById
 );
 
