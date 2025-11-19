@@ -138,6 +138,24 @@ export const ArticleService = {
     return article;
   },
 
+  // Mengambil satu artikel by ID (Khusus Pemilik/Author)
+  // Digunakan untuk populate form edit di dashboard user
+  async getArticleById(articleId: string, authorId: string) {
+    // Cek kepemilikan (akan throw ForbiddenError jika bukan pemilik)
+    await verifyOwnership(articleId, authorId);
+
+    const article = await prisma.article.findUnique({
+      where: {
+        id: articleId,
+      },
+      select: articleSelectEdit,
+    });
+
+    if (!article) throw new NotFoundError("Article not found");
+
+    return article;
+  },
+
   // [admin] mengambil satu artikel by ID untuk form 'edit'
   async getArticleByIdForAdmin(articleId: string) {
     const article = await prisma.article.findFirst({

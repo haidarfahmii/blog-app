@@ -14,17 +14,48 @@ import {
 
 const router = Router();
 
-/**
- * Public routes
- */
+const uuidRegex =
+  "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
+
 // GET /api/articles - Get all published articles
 router.get("/", ArticleController.getPublishedArticles);
+
 // GET /api/articles/search?q=keyword - Search articles
 router.get("/search", ArticleController.searchArticles);
+
 // GET /api/articles/category/:category - Get articles by category
 router.get("/category/:category", ArticleController.getArticlesByCategory);
-// GET /api/articles/:slug - Get published article by slug
-router.get("/:slug", ArticleController.getPublishedArticleBySlug);
+
+/**
+ * Admin routes (require ADMIN role)
+ */
+// GET /api/articles/admin/all - Get all articles (including drafts)
+router.get(
+  "/admin/all",
+  authenticateToken,
+  requireAdmin,
+  ArticleController.getAdminArticles
+);
+
+// GET /api/articles/admin/:id - Get article by ID for admin
+router.get(
+  `/admin/:id(${uuidRegex})`,
+  authenticateToken,
+  requireAdmin,
+  ArticleController.getAdminArticleById
+);
+
+/**
+ * Protected action routes (require authentication)
+ */
+
+// POST /api/articles - Create new article
+router.post(
+  "/",
+  authenticateToken,
+  validate(createArticleValidationSchema),
+  ArticleController.createArticle
+);
 
 /**
  * Helper function untuk middleware requireOwnershipOrAdmin
@@ -39,54 +70,34 @@ const getArticleAuthorId = async (req: any) => {
   return article?.authorId;
 };
 
-/**
- * Protected routes (require authentication)
- */
-
-// POST /api/articles - Create new article
-router.post(
-  "/",
+// GET /api/articles/:id (Khusus Owner)
+router.get(
+  `/:id(${uuidRegex})`,
   authenticateToken,
-  validate(createArticleValidationSchema),
-  ArticleController.createArticle
+  ArticleController.getArticleById
 );
 // PUT /api/articles/:id - Update article
 router.put(
-  "/:id",
+  `/:id(${uuidRegex})`,
   authenticateToken,
   validate(updateArticleValidationSchema),
   ArticleController.updateArticle
 );
 // DELETE /api/articles/:id - Delete article
 router.delete(
-  "/:id",
+  `/:id(${uuidRegex})`,
   authenticateToken,
   requireOwnershipOrAdmin(getArticleAuthorId),
   ArticleController.deleteArticle
 );
 // PATCH /api/articles/:id/publish - Toggle publish status
 router.patch(
-  "/:id/publish",
+  `/:id(${uuidRegex})/publish`,
   authenticateToken,
   ArticleController.togglePublishStatus
 );
-/**
- * Admin routes (require ADMIN role)
- */
-// GET /api/articles/admin/all - Get all articles (including drafts)
-router.get(
-  "/admin/all",
-  authenticateToken,
-  requireAdmin,
-  ArticleController.getAdminArticles
-);
 
-// GET /api/articles/admin/:id - Get article by ID for admin
-router.get(
-  "/admin/:id",
-  authenticateToken,
-  requireAdmin,
-  ArticleController.getAdminArticleById
-);
+// GET /api/articles/:slug - Get published article by slug
+router.get("/:slug", ArticleController.getPublishedArticleBySlug);
 
 export default router;
