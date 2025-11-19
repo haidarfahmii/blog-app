@@ -189,6 +189,3 @@ Silakan buat **Pull Request** atau laporkan **Issue** jika Anda menemukan bug at
 -----
 
 Happy Coding\! 🚀
-    * Frontend menggunakan `npm run dev` (next dev).
-* **Environment Variables:** `JWT_SECRET` dan `DATABASE_URL` wajib diisi agar server tidak error saat startup. `CLIENT_URL` digunakan untuk konfigurasi CORS.
-```
