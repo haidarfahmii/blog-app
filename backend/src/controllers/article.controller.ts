@@ -34,6 +34,25 @@ export const ArticleController = {
     }
   ),
 
+  // [GET /articles/:id] untuk Author mengambil artikelnya sendiri
+  getArticleById: asyncHandler(
+    async (req: Request, res: Response, _next: NextFunction) => {
+      const { id } = req.params;
+      const authorId = req.user?.id;
+
+      if (!authorId) {
+        throw new UnauthorizedError("Authentication required");
+      }
+
+      const article = await ArticleService.getArticleById(id, authorId);
+
+      res.status(200).json({
+        success: true,
+        data: article,
+      });
+    }
+  ),
+
   // fungsi admin / user yang perlu otentikasi
   /**
    * [POST /articles] membuat artikel baru
